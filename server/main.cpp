@@ -168,184 +168,98 @@ int main(void)
 		{
 			struct sp_port *pPort = apValidPorts[iIndex];
 
-			int iBytesToRead = sp_input_waiting(pPort);
-			int iWriteLen = 0;
-#if 0
-			if (iBytesToRead == 0)
+			int iTxLen = 0;
+			int iBytesRead;
+
+			// Look for a command byte
+			iBytesRead = sp_blocking_read(pPort, auReadBuf, 1, 1/*ms timeout*/);
+			
+			if (iBytesRead > 0)
 			{
-				usleep(100);
-			}
-			if (iBytesToRead > 0)
-#endif
-			{
-				int iBytesRead;
-#if 1
-				auReadBuf[0] = 0;
-				iBytesRead = sp_blocking_read(pPort, auReadBuf+1, 1, 1/*ms timeout*/);
-				
-				if (iBytesRead > 0)
+				if (VERBOSE)
+					printf("P%d) Cmd %02X\n", iIndex, auReadBuf[0]);
+
+				// Now read 16-bit block number and byte checksum
+				iBytesRead = 1 + sp_blocking_read(pPort, auReadBuf+1, 3, 1/*ms timeout*/);
+				if (iBytesRead != 4) continue;
+				if (VERBOSE)
 				{
+					for (int i = 0; i < iBytesRead; i++)
 					{
-						if (VERBOSE)
-						{
-							printf("P%d) Cmd\n", iIndex);
-						}
-						iBytesRead = 2 + sp_blocking_read(pPort, auReadBuf+2, 3, 1/*ms timeout*/);
-						if (iBytesRead != 5) continue;
-#endif
-#if 0
-				//iBytesRead = sp_blocking_read(pPort, auReadBuf, 1, 10/*ms timeout*/);
-				iBytesRead = sp_blocking_read(pPort, auReadBuf, 1, 0/*ms timeout*/);
-				assert(iBytesRead == 1); if (iBytesRead != 1) continue;
-				
-				switch(auReadBuf[0])
+						printf("\t%02X '%c'\n", auReadBuf[i], auReadBuf[i] & 0x7f);
+					}
+				}
+				int iChksum = auReadBuf[0] ^ auReadBuf[1] ^ auReadBuf[2];
+				if (iChksum != auReadBuf[3])
 				{
-					case 0xC5:	// E
+					printf ("--- Chksum failed ---   read=%02X,%02X,%02X,%02X, calc=%02X\n",
+						auReadBuf[0],auReadBuf[1],auReadBuf[2],auReadBuf[3],iChksum);
+					continue;
+				}
+				if (VERBOSE)
+					printf("\tChksum ok: %02X\n", auReadBuf[4]);
+				
+				// If 4x bytes were read and the checksum passed, process request
+				int iBlock = auReadBuf[1] | (auReadBuf[2] << 8);
+				char *pDriveData = apFileData[(auReadBuf[0] >> 2) & 1];
+				pDriveData += iBlock << 9;
+
+				// Read block
+				if (auReadBuf[0] & 1)
+				{
+					// Echo command packet to confirm the request was received
+					iTxLen = sp_blocking_write(pPort, auReadBuf, 4, 1/*ms timeout*/);
+					if (iTxLen != 4) continue;
+
+					// Send the requsted block
+					iTxLen = sp_blocking_write(pPort, pDriveData, 512, 5/*ms timeout*/);
+					if (iTxLen < 512)
 					{
-						if (VERBOSE)
-						{
-							printf("P%d) Cmd E\n", iIndex);
-						}
-						iBytesRead = sp_blocking_read(pPort, auReadBuf+1, 4, 10/*ms timeout*/);
-						assert(iBytesRead == 4); if (iBytesRead != 4) continue;
-						iBytesRead++;
-#endif
-						if (VERBOSE)
-						{
-							for (int i = 1; i < iBytesRead; i++)
-							{
-								printf("\t%02X '%c'\n", auReadBuf[i], auReadBuf[i] & 0x7f);
-							}
-						}
-						int iChksum = auReadBuf[0] ^ auReadBuf[1] ^ auReadBuf[2] ^ auReadBuf[3];
-						if (iChksum != auReadBuf[4])
-						{
-							printf ("--- Chksum failed ---   read=%02X,%02X,%02X,%02X,%02X, calc=%02X\n",
-								auReadBuf[0],auReadBuf[1],auReadBuf[2],auReadBuf[3],auReadBuf[4],
-								iChksum);
-							continue;
-						}
-						else
-						{
-							if (VERBOSE)
-							{
-								printf("\tChksum ok: %02X\n", auReadBuf[4]);
-							}
-							
-							int iBlock = auReadBuf[2] | (auReadBuf[3] << 8);
-							char *pDriveData = apFileData[(auReadBuf[1] >> 2) & 1];
-							pDriveData += iBlock * 512;
-
-							// Read block
-							if (auReadBuf[1] & 1)
-							{
-#if 1
-								iChksum = 0;
-								for (int i = 1; i < 4; i++)
-									iChksum ^= auReadBuf[i];
-								auReadBuf[4] = iChksum;
-
-								iWriteLen = sp_blocking_write(pPort, auReadBuf+1, 4, 10/*ms timeout*/);
-								assert(iWriteLen == 4); if (iWriteLen != 4) continue;
-#endif
-#if 0
-								iChksum = 0;
-								for (int i = 0; i < 4; i++)
-									iChksum ^= auReadBuf[i];
-								auReadBuf[4] = iChksum;
-
-								iWriteLen = sp_blocking_write(pPort, auReadBuf, 5, 10/*ms timeout*/);
-								assert(iWriteLen == 5); if (iWriteLen != 5) continue;
-#endif
-#if 0
-								time_t t = time(0);   // get time now
-								struct tm * pDateTime = localtime( & t );
-								int iDate = ((pDateTime->tm_year-100) << 9)
-											| (pDateTime->tm_mon << 5)
-											| pDateTime->tm_mday;
-
-								auReadBuf[4] = pDateTime->tm_min;	// TimeLo=Minute
-								auReadBuf[5] = pDateTime->tm_hour;	// TimeHi=Hour
-								auReadBuf[6] = iDate & 0xff;		// DateLo
-								auReadBuf[7] = (iDate >> 8);		// DateHi
-
-								iChksum = 0;
-								for (int i = 0; i < 8; i++)
-									iChksum ^= auReadBuf[i];
-								auReadBuf[8] = iChksum;
-
-								iWriteLen = sp_blocking_write(pPort, auReadBuf, 9, 10/*ms timeout*/);
-								assert(iWriteLen == 9); if (iWriteLen != 9) continue;
-#endif
-
-								static unsigned char auSendBuf[513];
-								iWriteLen = sp_blocking_write(pPort, pDriveData, 512, 50/*ms timeout*/);
-								if (iWriteLen < 512)
-									printf("WriteLen=%d\n",iWriteLen);
-								assert(iWriteLen == 512); if (iWriteLen != 512) continue;
-
-								if (iWriteLen == 512)
-								{
-									iChksum = 0;
-									for (int i = 0; i < 512; i++)
-										iChksum ^= pDriveData[i];
-									iWriteLen = sp_blocking_write(pPort, &iChksum, 1, 10/*ms timeout*/);
-									assert(iWriteLen == 1);  if (iWriteLen != 1) continue;
-									
-									if (LOG)
-									{
-										printf("%d\tR %5d\r", (auReadBuf[1] >> 2) & 1, iBlock);
-										fflush(stdout);
-									}
-								}
-							}
-							else // Write block
-							{
-								static unsigned char auBlockBuf[513];
-								int iReadLen = sp_blocking_read(pPort, auBlockBuf, 512+1, 30/*ms timeout*/);
-								assert(iReadLen == 512+1);
-
-								iChksum = 0;
-								for (int i = 0; i < 512; i++)
-									iChksum ^= auBlockBuf[i];
-								auReadBuf[4] = iChksum;	
-
-#if 1
-								iWriteLen = sp_blocking_write(pPort, auReadBuf+1, 4, 1/*ms timeout*/);
-								printf ("Wrt Hdr=%02X,%02X,%02X,%02X,%02X, calc=%02X, rcv=%02x\n",
-									auReadBuf[0],auReadBuf[1],auReadBuf[2],auReadBuf[3],auReadBuf[4],
-									iChksum, auBlockBuf[512]);
-								//assert(iWriteLen == 4);
-#endif
-#if 0								
-								iWriteLen = sp_blocking_write(pPort, auReadBuf, 5, 10/*ms timeout*/);
-								assert(iWriteLen == 5);
-#endif
-
-								// Block data checksum matches, write it to disk
-								if (iChksum == auBlockBuf[512])
-								{
-									memcpy(pDriveData, auBlockBuf, 512);
-								}
-
-								if (LOG)
-								{
-									printf("%d\t\t\t\tW %5d\r", (auReadBuf[1] >> 2) & 1, iBlock);
-									fflush(stdout);
-								}
-							}
-						}
-						break;
+						printf("Err: WriteLen=%d\n",iTxLen);
+						continue;
 					}
-#if 0					
-					default:
+
+					// Calc data checksum
+					iChksum = 0;
+					for (int i = 0; i < 512; i++)
+						iChksum ^= pDriveData[i];
+
+					// Send checksum
+					iTxLen = sp_blocking_write(pPort, &iChksum, 1, 30/*ms timeout*/);
+					if (iTxLen != 1) continue;
+					
+					if (LOG)
 					{
-						printf("P%d) Bad cmd: %02X\n", iIndex, auReadBuf[0]);
-						sp_flush(pPort, SP_BUF_INPUT);
-						break;
+						printf("%d\tR %5d\r", (auReadBuf[0] >> 2) & 1, iBlock);
+						fflush(stdout);
 					}
-#endif
-	
+				}
+				else // Write block
+				{
+					static unsigned char auBlockBuf[513];
+					int iReadLen = sp_blocking_read(pPort, auBlockBuf, 512+1, 30/*ms timeout*/);
+					assert(iReadLen == 512+1);
+
+					iChksum = 0;
+					for (int i = 0; i < 512; i++)
+						iChksum ^= auBlockBuf[i];
+					auReadBuf[3] = iChksum;	
+
+					iTxLen = sp_blocking_write(pPort, auReadBuf, 4, 1/*ms timeout*/);
+					if (0) printf ("Wrt Hdr=%02X,%02X,%02X,%02X, calc=%02X, rcv=%02x\n",
+						auReadBuf[0],auReadBuf[1],auReadBuf[2],auReadBuf[3],iChksum, auBlockBuf[512]);
+
+					// Block data checksum matches, write it to disk
+					if (iChksum == auBlockBuf[512])
+					{
+						memcpy(pDriveData, auBlockBuf, 512);
+					}
+
+					if (LOG)
+					{
+						printf("%d\t\t\t\tW %5d\r", (auReadBuf[0] >> 2) & 1, iBlock);
+						fflush(stdout);
+					}
 				}
 			}
 
