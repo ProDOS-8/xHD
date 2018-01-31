@@ -1,2 +1,4 @@
 *.o
 *.exe
+_FileInformation.txt
+prodos.po
