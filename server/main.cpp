@@ -19,9 +19,6 @@
 
 #define PORT_STR	"usbserial"
 
-#define VERBOSE		(0)
-#define LOG			(1)
-
 #if 0
 //TODO: Switch xHD client to Z8530 built-in CRC calc
 /*
@@ -51,17 +48,60 @@ crc_xmodem(char *ptr, unsigned count)
 }
 #endif
 
-int main(void)
+int main(int argc, char *argv[])
 {
-// TODO: Parse cmd line for switches & disk image filenames
+	bool bVerbose = false;
+	bool bLog = true;
+	char *apFilename[2] = {0, 0};
 
-	unsigned char auReadBuf[256] = {0};
-	enum sp_return eResult;
+	for (int iArg = 1; iArg < argc; iArg++)
+	{
+		if (argv[iArg][0] == '-')
+		{
+			for (int iChar = 1; argv[iArg][iChar]; iChar++)
+			{
+				switch (argv[iArg][iChar])
+				{
+				case 'v':
+				{
+					bVerbose = true;
+					printf("Verbose: On\n");
+					break;
+				}
+				case 'n':
+				{
+					bLog = false;
+					if (bVerbose)
+						printf("Logging: Off\n");
+					break;
+				}
+				}
+			}
+			continue;
+		}
+		for (int iDrive = 0; iDrive < 2; iDrive++)
+		{
+			if (apFilename[iDrive] == 0)
+			{
+				apFilename[iDrive] = argv[iArg];
+				if (bVerbose)
+					printf("Drive %d: %s\n", iDrive + 1, apFilename[iDrive]);
+				break;
+			}
+		}
+	}
 
-	// Map virtual drives
-	const char *apFilename[2] = {"/Applications/GSport/HD/P1NEW.PO", "/Applications/GSport/HD/P2.PO"};
-	//const char *apFilename[2] = {"/Applications/GSport/HD/P1NEW.PO", "/Applications/GSport/Disk5.25/ProDOS_2_5a1.PO"};
-	
+	if (apFilename[0] == 0)
+	{
+		printf("Usage: %s [-nv] img1 [img2]\n"
+			   "\t-n\tno logging\n"
+			   "\t-v\tbe verbose\n"
+			   "\timg1\tdrive 1 disk image filename\n"
+			   "\timg2\tdrive 2 disk image filename\n",
+			   argv[0]);
+		return EXIT_FAILURE;
+	}
+
 	char * apFileData[2];
 	for (int iDrive=0; iDrive<2; iDrive++)
 	{
@@ -71,6 +111,8 @@ int main(void)
 		unsigned int uFilesize = (unsigned int)stats.st_size;
 		apFileData[iDrive] = (char*) mmap(0, uFilesize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	}
+	
+	enum sp_return eResult;
 	
 	// Create a configuration for the serial ports
 	struct sp_port_config *pSerialConfig=0;
@@ -105,7 +147,7 @@ int main(void)
 			
 			if (strstr(sp_get_port_name(pPort), PORT_STR) )
 			{
-				if (VERBOSE)
+				if (bVerbose)
 				{
 					printf("Valid port %d: %s\n", iValidPortCount, sp_get_port_name(pPort) );
 					printf("\tDescr: %s\n", sp_get_port_description(pPort));
@@ -146,7 +188,7 @@ int main(void)
 						iValidPortCount--;
 						sp_close(pPort);
 						sp_free_port(pPort);
-						if (VERBOSE)
+						if (bVerbose)
 						{
 							printf("\n\t--- Could not open this port ---\n\n");
 						}
@@ -155,8 +197,8 @@ int main(void)
 			}
 			else // ! usbserial
 			{
-				if (VERBOSE)
-					printf("\tskip\t'%s'.\n", sp_get_port_name(pPort));
+				if (bVerbose)
+					printf("\tskip\t'%s'\n", sp_get_port_name(pPort));
 			}
 		}
 		sp_free_port_list(ports);
@@ -171,6 +213,8 @@ int main(void)
 // TODO: Add server shutdown
 	while (1)
 	{
+		unsigned char auReadBuf[256];
+
 		for (int iIndex = 0; iIndex < iValidPortCount; iIndex++)
 		{
 			struct sp_port *pPort = apValidPorts[iIndex];
@@ -183,13 +227,13 @@ int main(void)
 			
 			if (iBytesRead > 0)
 			{
-				if (VERBOSE)
+				if (bVerbose)
 					printf("P%d) Cmd %02X\n", iIndex, auReadBuf[0]);
 
 				// Now read 16-bit block number and byte checksum
 				iBytesRead = 1 + sp_blocking_read(pPort, auReadBuf+1, 3, 1/*ms timeout*/);
 				if (iBytesRead != 4) continue;
-				if (VERBOSE)
+				if (bVerbose)
 				{
 					for (int i = 0; i < iBytesRead; i++)
 					{
@@ -203,7 +247,7 @@ int main(void)
 						auReadBuf[0],auReadBuf[1],auReadBuf[2],auReadBuf[3],iChksum);
 					continue;
 				}
-				if (VERBOSE)
+				if (bVerbose)
 					printf("\tChksum ok: %02X\n", auReadBuf[4]);
 				
 				// If 4x bytes were read and the checksum passed, process request
@@ -235,7 +279,7 @@ int main(void)
 					iTxLen = sp_blocking_write(pPort, &iChksum, 1, 30/*ms timeout*/);
 					if (iTxLen != 1) continue;
 					
-					if (LOG)
+					if (bLog)
 					{
 						printf("%d\tR %5d\r", (auReadBuf[0] >> 2) & 1, iBlock);
 						fflush(stdout);
@@ -262,7 +306,7 @@ int main(void)
 						memcpy(pDriveData, auBlockBuf, 512);
 					}
 
-					if (LOG)
+					if (bLog)
 					{
 						printf("%d\t\t\t\tW %5d\r", (auReadBuf[0] >> 2) & 1, iBlock);
 						fflush(stdout);
