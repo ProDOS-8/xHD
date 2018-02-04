@@ -85,7 +85,7 @@ int main(int argc, char *argv[])
 			{
 				apFilename[iDrive] = argv[iArg];
 				if (bVerbose)
-					printf("Drive %d: %s\n", iDrive + 1, apFilename[iDrive]);
+					printf("Drive %d: %s\n", iDrive, apFilename[iDrive]);
 				break;
 			}
 		}
