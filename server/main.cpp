@@ -50,10 +50,10 @@ crc_xmodem(char *ptr, unsigned count)
 
 int main(int argc, char *argv[])
 {
+	// Process the command line arguments
 	bool bVerbose = false;
 	bool bLog = true;
 	char *apFilename[2] = {0, 0};
-
 	for (int iArg = 1; iArg < argc; iArg++)
 	{
 		if (argv[iArg][0] == '-')
@@ -102,6 +102,7 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
+	// Memory-map the disk image file(s)
 	char *apFileData[2] = {0, 0};
 	for (int iDrive = 0; iDrive < 2; iDrive++)
 	{
@@ -131,44 +132,41 @@ int main(int argc, char *argv[])
 		}
 	}
 	
-	enum sp_return eResult;
-	
 	// Create a configuration for the serial ports
-	struct sp_port_config *pSerialConfig=0;
-	{
-		eResult = sp_new_config(&pSerialConfig);
-		assert(eResult == SP_OK);
-		eResult = sp_set_config_baudrate(pSerialConfig, 230400);
-		assert(eResult == SP_OK);
-		eResult = sp_set_config_bits(pSerialConfig, 8);
-		assert(eResult == SP_OK);
-		eResult = sp_set_config_parity(pSerialConfig, SP_PARITY_NONE );
-		assert(eResult == SP_OK);
-		eResult = sp_set_config_stopbits(pSerialConfig, 1);
-		assert(eResult == SP_OK);
-		eResult = sp_set_config_flowcontrol(pSerialConfig, SP_FLOWCONTROL_RTSCTS );
-		assert(eResult == SP_OK);
-	}
+	enum sp_return eResult;
+	struct sp_port_config *pSerialConfig = 0;
+	eResult = sp_new_config(&pSerialConfig);
+	assert(eResult == SP_OK);
+	eResult = sp_set_config_baudrate(pSerialConfig, 230400);
+	assert(eResult == SP_OK);
+	eResult = sp_set_config_bits(pSerialConfig, 8);
+	assert(eResult == SP_OK);
+	eResult = sp_set_config_parity(pSerialConfig, SP_PARITY_NONE);
+	assert(eResult == SP_OK);
+	eResult = sp_set_config_stopbits(pSerialConfig, 1);
+	assert(eResult == SP_OK);
+	eResult = sp_set_config_flowcontrol(pSerialConfig, SP_FLOWCONTROL_RTSCTS);
+	assert(eResult == SP_OK);
 
 	// Find and configure valid serial ports
 	const int MAX_PORTS = 2;
 	int iValidPortCount = 0;
-	struct sp_port * apValidPorts[MAX_PORTS];
+	struct sp_port *apValidPorts[MAX_PORTS];
 	{
 		struct sp_port **ports;
 
 		eResult = sp_list_ports(&ports);
 		assert(eResult == SP_OK);
-		
+
 		for (int i = 0; ports[i]; i++)
 		{
 			struct sp_port *pPort = ports[i];
-			
-			if (strstr(sp_get_port_name(pPort), PORT_STR) )
+
+			if (strstr(sp_get_port_name(pPort), PORT_STR))
 			{
 				if (bVerbose)
 				{
-					printf("Valid port %d: %s\n", iValidPortCount, sp_get_port_name(pPort) );
+					printf("Valid port %d: %s\n", iValidPortCount, sp_get_port_name(pPort));
 					printf("\tDescr: %s\n", sp_get_port_description(pPort));
 					int iUsbBus = -1;
 					int iUsbAddress = -1;
@@ -183,9 +181,8 @@ int main(int argc, char *argv[])
 					printf("\tManufacturer: %s\n", sp_get_port_usb_manufacturer(pPort));
 					printf("\tProduct: %s\n", sp_get_port_usb_product(pPort));
 					printf("\tSerial #: %s\n", sp_get_port_usb_serial(pPort));
-					
 				}
-				
+
 				// Retain the port and configure it's settings
 				if (iValidPortCount < MAX_PORTS)
 				{
@@ -193,7 +190,7 @@ int main(int argc, char *argv[])
 					eResult = sp_copy_port(pPort, &apValidPorts[iValidPortCount++]);
 					assert(eResult == SP_OK);
 
-					// Use the copied port 
+					// Use the copied port
 					pPort = apValidPorts[iValidPortCount-1];
 
 					// See if the port can be opened and configured
@@ -208,9 +205,7 @@ int main(int argc, char *argv[])
 						sp_close(pPort);
 						sp_free_port(pPort);
 						if (bVerbose)
-						{
 							printf("\n\t--- Could not open this port ---\n\n");
-						}
 					}
 				}
 			}
@@ -243,32 +238,30 @@ int main(int argc, char *argv[])
 
 			// Look for a command byte
 			iBytesRead = sp_blocking_read(pPort, auReadBuf, 1, 1/*ms timeout*/);
-			
+
 			if (iBytesRead > 0)
 			{
 				if (bVerbose)
 					printf("P%d) Cmd %02X\n", iIndex, auReadBuf[0]);
 
 				// Now read 16-bit block number and byte checksum
-				iBytesRead = 1 + sp_blocking_read(pPort, auReadBuf+1, 3, 1/*ms timeout*/);
-				if (iBytesRead != 4) continue;
+				iBytesRead = 1 + sp_blocking_read(pPort, auReadBuf + 1, 3, 1/*ms timeout*/);
+				if (iBytesRead != 4)
+					continue;
 				if (bVerbose)
-				{
 					for (int i = 0; i < iBytesRead; i++)
-					{
 						printf("\t%02X '%c'\n", auReadBuf[i], auReadBuf[i] & 0x7f);
-					}
-				}
+
 				int iChksum = auReadBuf[0] ^ auReadBuf[1] ^ auReadBuf[2];
 				if (iChksum != auReadBuf[3])
 				{
 					printf ("--- Chksum failed ---   read=%02X,%02X,%02X,%02X, calc=%02X\n",
-						auReadBuf[0],auReadBuf[1],auReadBuf[2],auReadBuf[3],iChksum);
+						auReadBuf[0], auReadBuf[1], auReadBuf[2], auReadBuf[3], iChksum);
 					continue;
 				}
 				if (bVerbose)
 					printf("\tChksum ok: %02X\n", auReadBuf[4]);
-				
+
 				// If 4x bytes were read and the checksum passed, process request
 				int iBlock = auReadBuf[1] | (auReadBuf[2] << 8);
 				int iDrive = (auReadBuf[0] >> 2) & 1;
@@ -290,7 +283,8 @@ int main(int argc, char *argv[])
 				{
 					// Echo command packet to confirm the request was received
 					iTxLen = sp_blocking_write(pPort, auReadBuf, 4, 1/*ms timeout*/);
-					if (iTxLen != 4) continue;
+					if (iTxLen != 4)
+						continue;
 
 					// Send the requsted block
 					iTxLen = sp_blocking_write(pPort, pDriveData, 512, 5/*ms timeout*/);
@@ -307,8 +301,9 @@ int main(int argc, char *argv[])
 
 					// Send checksum
 					iTxLen = sp_blocking_write(pPort, &iChksum, 1, 30/*ms timeout*/);
-					if (iTxLen != 1) continue;
-					
+					if (iTxLen != 1)
+						continue;
+
 					if (bLog)
 					{
 						printf("%d\tR %5d\r", iDrive, iBlock);
@@ -317,24 +312,22 @@ int main(int argc, char *argv[])
 				}
 				else // Write block
 				{
-					static unsigned char auBlockBuf[513];
-					int iReadLen = sp_blocking_read(pPort, auBlockBuf, 512+1, 30/*ms timeout*/);
-					assert(iReadLen == 512+1);
+					static unsigned char auBlockBuf[512 + 1];
+					int iReadLen = sp_blocking_read(pPort, auBlockBuf, 512 + 1, 30/*ms timeout*/);
+					assert(iReadLen == 512 + 1);
 
 					iChksum = 0;
 					for (int i = 0; i < 512; i++)
 						iChksum ^= auBlockBuf[i];
-					auReadBuf[3] = iChksum;	
+					auReadBuf[3] = iChksum;
 
 					iTxLen = sp_blocking_write(pPort, auReadBuf, 4, 1/*ms timeout*/);
 					if (0) printf ("Wrt Hdr=%02X,%02X,%02X,%02X, calc=%02X, rcv=%02x\n",
-						auReadBuf[0],auReadBuf[1],auReadBuf[2],auReadBuf[3],iChksum, auBlockBuf[512]);
+						auReadBuf[0], auReadBuf[1], auReadBuf[2], auReadBuf[3], iChksum, auBlockBuf[512]);
 
 					// Block data checksum matches, write it to disk
 					if (iChksum == auBlockBuf[512])
-					{
 						memcpy(pDriveData, auBlockBuf, 512);
-					}
 
 					if (bLog)
 					{
@@ -343,7 +336,6 @@ int main(int argc, char *argv[])
 					}
 				}
 			}
-
 		}
 	}
 
