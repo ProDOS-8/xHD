@@ -17,8 +17,6 @@
 #include <sys/mman.h>
 #include <assert.h>
 
-#define PORT_STR	"usbserial"
-
 #if 0
 //TODO: Switch xHD client to Z8530 built-in CRC calc
 /*
@@ -53,11 +51,23 @@ int main(int argc, char *argv[])
 	// Process the command line arguments
 	bool bVerbose = false;
 	bool bLog = true;
+	char *pPortname = 0;
 	char *apFilename[2] = {0, 0};
+
 	for (int iArg = 1; iArg < argc; iArg++)
 	{
+		// Process option
 		if (argv[iArg][0] == '-')
 		{
+			if (argv[iArg][1] == 'p')
+			{
+				pPortname = &argv[iArg][2];
+				if (bVerbose)
+					printf("Port: %s\n", pPortname);
+				continue;
+			}
+
+			// Process flags
 			for (int iChar = 1; argv[iArg][iChar]; iChar++)
 			{
 				switch (argv[iArg][iChar])
@@ -79,6 +89,8 @@ int main(int argc, char *argv[])
 			}
 			continue;
 		}
+
+		// Process disk image
 		for (int iDrive = 0; iDrive < 2; iDrive++)
 		{
 			if (apFilename[iDrive] == 0)
@@ -93,11 +105,12 @@ int main(int argc, char *argv[])
 
 	if (apFilename[0] == 0)
 	{
-		printf("Usage: %s [-nv] img1 [img2]\n"
-			   "\t-n\tno logging\n"
-			   "\t-v\tbe verbose\n"
-			   "\timg1\tdrive 1 disk image filename\n"
-			   "\timg2\tdrive 2 disk image filename\n",
+		printf("Usage: %s [-nv] [-p<port>] img1 [img2]\n"
+			   "\t-n\t\tno logging\n"
+			   "\t-v\t\tbe verbose\n"
+			   "\t-p<port>\t(partial) serial portname\n"
+			   "\timg1\t\tdrive 1 disk image filename\n"
+			   "\timg2\t\tdrive 2 disk image filename\n",
 			   argv[0]);
 		return EXIT_FAILURE;
 	}
@@ -135,18 +148,12 @@ int main(int argc, char *argv[])
 	// Create a configuration for the serial ports
 	enum sp_return eResult;
 	struct sp_port_config *pSerialConfig = 0;
-	eResult = sp_new_config(&pSerialConfig);
-	assert(eResult == SP_OK);
-	eResult = sp_set_config_baudrate(pSerialConfig, 230400);
-	assert(eResult == SP_OK);
-	eResult = sp_set_config_bits(pSerialConfig, 8);
-	assert(eResult == SP_OK);
-	eResult = sp_set_config_parity(pSerialConfig, SP_PARITY_NONE);
-	assert(eResult == SP_OK);
-	eResult = sp_set_config_stopbits(pSerialConfig, 1);
-	assert(eResult == SP_OK);
-	eResult = sp_set_config_flowcontrol(pSerialConfig, SP_FLOWCONTROL_RTSCTS);
-	assert(eResult == SP_OK);
+	assert(sp_new_config(&pSerialConfig) == SP_OK);
+	assert(sp_set_config_baudrate(pSerialConfig, 230400) == SP_OK);
+	assert(sp_set_config_bits(pSerialConfig, 8) == SP_OK);
+	assert(sp_set_config_parity(pSerialConfig, SP_PARITY_NONE) == SP_OK);
+	assert(sp_set_config_stopbits(pSerialConfig, 1) == SP_OK);
+	assert(sp_set_config_flowcontrol(pSerialConfig, SP_FLOWCONTROL_RTSCTS) == SP_OK);
 
 	// Find and configure valid serial ports
 	const int MAX_PORTS = 2;
@@ -155,32 +162,48 @@ int main(int argc, char *argv[])
 	{
 		struct sp_port **ports;
 
-		eResult = sp_list_ports(&ports);
-		assert(eResult == SP_OK);
+		if (sp_list_ports(&ports) != SP_OK)
+		{
+			printf("Err: Port enum - %s\n", sp_last_error_message());
+			return EXIT_FAILURE;
+		}
 
 		for (int i = 0; ports[i]; i++)
 		{
 			struct sp_port *pPort = ports[i];
 
-			if (strstr(sp_get_port_name(pPort), PORT_STR))
+			bool bValid = false;
+			if (pPortname)
+			{
+				if (strstr(sp_get_port_name(pPort), pPortname))
+					bValid = true;
+			}
+			else
+			{
+				if (sp_get_port_transport(pPort) == SP_TRANSPORT_USB)
+					bValid = true;
+			}
+
+			if (bValid)
 			{
 				if (bVerbose)
 				{
 					printf("Valid port %d: %s\n", iValidPortCount, sp_get_port_name(pPort));
 					printf("\tDescr: %s\n", sp_get_port_description(pPort));
-					int iUsbBus = -1;
-					int iUsbAddress = -1;
-					eResult = sp_get_port_usb_bus_address(pPort, &iUsbBus, &iUsbAddress);
-					assert(eResult == SP_OK);
-					printf("\tUSB: Bus=%d, Address=%d\n", iUsbBus, iUsbAddress);
-					int iUsbVid = -1;
-					int iUsbPid = -1;
-					eResult = sp_get_port_usb_vid_pid(pPort, &iUsbVid, &iUsbPid);
-					assert(eResult == SP_OK);
-					printf("\tUSB: VendorID=$%04X, ProductID=$%04X\n", iUsbVid, iUsbPid);
-					printf("\tManufacturer: %s\n", sp_get_port_usb_manufacturer(pPort));
-					printf("\tProduct: %s\n", sp_get_port_usb_product(pPort));
-					printf("\tSerial #: %s\n", sp_get_port_usb_serial(pPort));
+					if (sp_get_port_transport(pPort) == SP_TRANSPORT_USB)
+					{
+						int iUsbBus = -1;
+						int iUsbAddress = -1;
+						if (sp_get_port_usb_bus_address(pPort, &iUsbBus, &iUsbAddress) == SP_OK)
+							printf("\tUSB: Bus=%d, Address=%d\n", iUsbBus, iUsbAddress);
+						int iUsbVid = -1;
+						int iUsbPid = -1;
+						if (sp_get_port_usb_vid_pid(pPort, &iUsbVid, &iUsbPid) == SP_OK)
+							printf("\tUSB: VendorID=$%04X, ProductID=$%04X\n", iUsbVid, iUsbPid);
+						printf("\tManufacturer: %s\n", sp_get_port_usb_manufacturer(pPort));
+						printf("\tProduct: %s\n", sp_get_port_usb_product(pPort));
+						printf("\tSerial #: %s\n", sp_get_port_usb_serial(pPort));
+					}
 				}
 
 				// Retain the port and configure it's settings
@@ -194,18 +217,17 @@ int main(int argc, char *argv[])
 					pPort = apValidPorts[iValidPortCount-1];
 
 					// See if the port can be opened and configured
-					enum sp_return eResultOpen;
-					enum sp_return eResultConfig;
-					eResultOpen = sp_open(pPort, SP_MODE_READ_WRITE);
-					eResultConfig = sp_set_config(pPort, pSerialConfig);
-					if (eResultOpen != SP_OK || eResultConfig != SP_OK)
+					eResult = sp_open(pPort, SP_MODE_READ_WRITE);
+					if (eResult == SP_OK)
+						eResult = sp_set_config(pPort, pSerialConfig);
+					if (eResult != SP_OK)
 					{
 						// Port is not valid
 						iValidPortCount--;
 						sp_close(pPort);
 						sp_free_port(pPort);
 						if (bVerbose)
-							printf("\n\t--- Could not open this port ---\n\n");
+							printf("\n\t--- Could not open this port: %s ---\n\n", sp_last_error_message());
 					}
 				}
 			}
