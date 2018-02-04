@@ -10,6 +10,7 @@
 #include <time.h>
 #include <string.h>
 #include <libserialport.h>
+#include <stdlib.h>
 #include <fcntl.h>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -159,6 +160,12 @@ int main(void)
 			}
 		}
 		sp_free_port_list(ports);
+	}
+
+	if (iValidPortCount == 0)
+	{
+		printf("Err: No valid port\n");
+		return EXIT_FAILURE;
 	}
 
 // TODO: Add server shutdown
