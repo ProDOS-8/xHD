@@ -102,14 +102,33 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	char * apFileData[2];
-	for (int iDrive=0; iDrive<2; iDrive++)
+	char *apFileData[2] = {0, 0};
+	for (int iDrive = 0; iDrive < 2; iDrive++)
 	{
+		if (apFilename[iDrive] == 0)
+			continue;
+
 		int fd = open(apFilename[iDrive], O_RDWR, S_IWRITE | S_IREAD);
+		if (fd == -1)
+		{
+			printf("Err: %s - %s\n", apFilename[iDrive], strerror(errno));
+			return EXIT_FAILURE;
+		}
+
 		struct stat stats;
-		fstat(fd, &stats);
+		if (fstat(fd, &stats) == -1)
+		{
+			printf("Err: %s - %s\n", apFilename[iDrive], strerror(errno));
+			return EXIT_FAILURE;
+		}
 		unsigned int uFilesize = (unsigned int)stats.st_size;
-		apFileData[iDrive] = (char*) mmap(0, uFilesize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+
+		apFileData[iDrive] = (char*)mmap(0, uFilesize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+		if (apFileData[iDrive] == MAP_FAILED)
+		{
+			printf("Err: %s - %s\n", apFilename[iDrive], strerror(errno));
+			return EXIT_FAILURE;
+		}
 	}
 	
 	enum sp_return eResult;
@@ -252,7 +271,18 @@ int main(int argc, char *argv[])
 				
 				// If 4x bytes were read and the checksum passed, process request
 				int iBlock = auReadBuf[1] | (auReadBuf[2] << 8);
-				char *pDriveData = apFileData[(auReadBuf[0] >> 2) & 1];
+				int iDrive = (auReadBuf[0] >> 2) & 1;
+				char *pDriveData = apFileData[iDrive];
+				if (pDriveData == 0)
+				{
+					if (bLog)
+					{
+						printf("%d\tN\n", iDrive);
+						fflush(stdout);
+					}
+					// TODO: Make this an I/O error on the client side
+					continue;
+				}
 				pDriveData += iBlock << 9;
 
 				// Read block
@@ -281,7 +311,7 @@ int main(int argc, char *argv[])
 					
 					if (bLog)
 					{
-						printf("%d\tR %5d\r", (auReadBuf[0] >> 2) & 1, iBlock);
+						printf("%d\tR %5d\r", iDrive, iBlock);
 						fflush(stdout);
 					}
 				}
@@ -308,7 +338,7 @@ int main(int argc, char *argv[])
 
 					if (bLog)
 					{
-						printf("%d\t\t\t\tW %5d\r", (auReadBuf[0] >> 2) & 1, iBlock);
+						printf("%d\t\t\t\tW %5d\r", iDrive, iBlock);
 						fflush(stdout);
 					}
 				}
