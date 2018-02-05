@@ -125,14 +125,14 @@ int main(int argc, char *argv[])
 		int fd = open(apFilename[iDrive], O_RDWR, S_IWRITE | S_IREAD);
 		if (fd == -1)
 		{
-			printf("Err: %s - %s\n", apFilename[iDrive], strerror(errno));
+			printf("Err: Open %s - %s\n", apFilename[iDrive], strerror(errno));
 			return EXIT_FAILURE;
 		}
 
 		struct stat stats;
 		if (fstat(fd, &stats) == -1)
 		{
-			printf("Err: %s - %s\n", apFilename[iDrive], strerror(errno));
+			printf("Err: Stat %s - %s\n", apFilename[iDrive], strerror(errno));
 			return EXIT_FAILURE;
 		}
 		unsigned int uFilesize = (unsigned int)stats.st_size;
@@ -140,13 +140,12 @@ int main(int argc, char *argv[])
 		apFileData[iDrive] = (char*)mmap(0, uFilesize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 		if (apFileData[iDrive] == MAP_FAILED)
 		{
-			printf("Err: %s - %s\n", apFilename[iDrive], strerror(errno));
+			printf("Err: Map %s - %s\n", apFilename[iDrive], strerror(errno));
 			return EXIT_FAILURE;
 		}
 	}
 	
 	// Create a configuration for the serial ports
-	enum sp_return eResult;
 	struct sp_port_config *pSerialConfig = 0;
 	assert(sp_new_config(&pSerialConfig) == SP_OK);
 	assert(sp_set_config_baudrate(pSerialConfig, 230400) == SP_OK);
@@ -159,6 +158,7 @@ int main(int argc, char *argv[])
 	const int MAX_PORTS = 2;
 	int iValidPortCount = 0;
 	struct sp_port *apValidPorts[MAX_PORTS];
+	enum sp_return eResult;
 	{
 		struct sp_port **ports;
 
@@ -231,11 +231,9 @@ int main(int argc, char *argv[])
 					}
 				}
 			}
-			else // ! usbserial
-			{
+			else // ! valid
 				if (bVerbose)
 					printf("\tskip\t'%s'\n", sp_get_port_name(pPort));
-			}
 		}
 		sp_free_port_list(ports);
 	}
