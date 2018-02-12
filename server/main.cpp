@@ -16,6 +16,7 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <assert.h>
+#include <errno.h>
 
 #if 0
 //TODO: Switch xHD client to Z8530 built-in CRC calc
