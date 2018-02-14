@@ -5,7 +5,7 @@ LDLIBS = -lserialport
 
 ifeq ($(OS),Windows_NT)
 
-LDLIBS += -lcfgmgr32 -lsetupapi
+LDLIBS += -lsetupapi
 
 CC  = gcc
 CXX = g++
