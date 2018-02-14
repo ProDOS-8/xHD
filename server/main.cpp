@@ -328,7 +328,7 @@ int main(int argc, char *argv[])
 					iTxLen = sp_blocking_write(pPort, pDriveData, 512, 5/*ms timeout*/);
 					if (iTxLen < 512)
 					{
-						printf("Err: WriteLen=%d\n",iTxLen);
+						printf("Err: WriteLen=%d\n", iTxLen);
 						continue;
 					}
 
@@ -352,7 +352,11 @@ int main(int argc, char *argv[])
 				{
 					static unsigned char auBlockBuf[512 + 1];
 					int iReadLen = sp_blocking_read(pPort, auBlockBuf, 512 + 1, 30/*ms timeout*/);
-					assert(iReadLen == 512 + 1);
+					if (iReadLen != 512 + 1)
+					{
+						printf("Err: ReadLen=%d\n", iReadLen);
+						continue;
+					}
 
 					iChksum = 0;
 					for (int i = 0; i < 512; i++)
