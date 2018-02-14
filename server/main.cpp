@@ -53,6 +53,7 @@ int main(int argc, char *argv[])
 	bool bVerbose = false;
 	bool bLog = true;
 	char *pPortname = 0;
+	int iBaudrate = 230400;
 	char *apFilename[2] = {0, 0};
 
 	for (int iArg = 1; iArg < argc; iArg++)
@@ -60,6 +61,22 @@ int main(int argc, char *argv[])
 		// Process option
 		if (argv[iArg][0] == '-')
 		{
+			if (argv[iArg][1] == 'b')
+			{
+				char *pEnd;
+				long lBaudrate = strtol(&argv[iArg][2], &pEnd, 10);
+				iBaudrate = (int)lBaudrate;
+				if (*pEnd || iBaudrate != lBaudrate)
+				{
+					// Force usage
+					apFilename[0] = 0;
+					break;
+				}
+				if (bVerbose)
+					printf("Baud: %d\n", iBaudrate);
+				continue;
+			}
+
 			if (argv[iArg][1] == 'p')
 			{
 				pPortname = &argv[iArg][2];
@@ -106,9 +123,10 @@ int main(int argc, char *argv[])
 
 	if (apFilename[0] == 0)
 	{
-		printf("Usage: %s [-nv] [-p<port>] img1 [img2]\n"
+		printf("Usage: %s [-nv] [-b<baud>] [-p<port>] img1 [img2]\n"
 			   "\t-n\t\tno logging\n"
 			   "\t-v\t\tbe verbose\n"
+			   "\t-b<baud>\tbaud rate\n"
 			   "\t-p<port>\t(partial) serial portname\n"
 			   "\timg1\t\tdrive 1 disk image filename\n"
 			   "\timg2\t\tdrive 2 disk image filename\n",
@@ -149,7 +167,7 @@ int main(int argc, char *argv[])
 	// Create a configuration for the serial ports
 	struct sp_port_config *pSerialConfig = 0;
 	assert(sp_new_config(&pSerialConfig) == SP_OK);
-	assert(sp_set_config_baudrate(pSerialConfig, 230400) == SP_OK);
+	assert(sp_set_config_baudrate(pSerialConfig, iBaudrate) == SP_OK);
 	assert(sp_set_config_bits(pSerialConfig, 8) == SP_OK);
 	assert(sp_set_config_parity(pSerialConfig, SP_PARITY_NONE) == SP_OK);
 	assert(sp_set_config_stopbits(pSerialConfig, 1) == SP_OK);
